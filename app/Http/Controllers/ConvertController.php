@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\Log;
 
 class ConvertController extends Controller
 {
@@ -81,15 +82,25 @@ class ConvertController extends Controller
                             $rate = $provider['extract']($json, $to);
                             if ($rate) {
                                 $source = $provider['name'];
+                                Log::channel('exchange')->info("Using provider: {$provider['name']}", [
+                                    'pair' => "{$from}/{$to}",
+                                    'rate' => $rate,
+                                ]);
                                 break;
                             }
+                        } else {
+                              Log::channel('exchange')->warning("Provider failed (bad response): {$provider['name']}");
                         }
                     } catch (\Throwable $e) {
+                        Log::channel('exchange')->warning("Provider error: {$provider['name']}", [
+                            'message' => $e->getMessage(),
+                        ]);
                         continue;
                     }
                 }
 
                 if (!$rate) {
+                    Log::channel('exchange')->error("All external providers failed for {$from}/{$to}");
                     return response()->json(['error' => 'All external providers failed'], 503);
                 }
 
@@ -109,6 +120,14 @@ class ConvertController extends Controller
 
         $result = $amount * $rate;
         $execTime = round((microtime(true) - $start) * 1000, 2);
+
+        if ($execTime > 500) {
+            Log::channel('exchange')->warning("Slow response detected", [
+                'pair' => "{$from}/{$to}",
+                'time_ms' => $execTime,
+                'source' => $source,
+            ]);
+        }
 
         return response()->json([
             'data' => [
