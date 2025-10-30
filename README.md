@@ -1,59 +1,171 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400" alt="Laravel Logo"></a></p>
+# 💱 Currency Conversion API
 
-<p align="center">
-<a href="https://github.com/laravel/framework/actions"><img src="https://github.com/laravel/framework/workflows/tests/badge.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+High-performance currency conversion API built with **Laravel**, following **Domain-Driven Design (DDD)** and **CQRS** principles.
 
-## About Laravel
+The system uses a multi-level data architecture (Redis cache, local database, and external providers) with rate limiting, fault tolerance (circuit breaker), and background synchronization using median aggregation.
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+---
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## 🚀 Features
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **DDD Architecture** (Domain / Application / Infrastructure layers)
+- **CQRS Pattern** – isolated query handler for conversion logic
+- **Multi-level Data Access**
+  - **L1:** Redis cache (1 second)
+  - **L2:** Local database (≤1 hour)
+  - **L3:** External APIs (3 fallbacks)
+- **Circuit Breaker** and **Retry Logic**
+- **Background Job** for hourly rate synchronization
+- **Median Aggregation** from multiple providers
+- **Strict Rate Limiting** (500 req/min per user, 1000 per IP)
+- **Health Check Endpoint** (`/health`)
+- **Detailed Logging** for provider events and fallbacks
 
-## Learning Laravel
+---
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework. You can also check out [Laravel Learn](https://laravel.com/learn), where you will be guided through building a modern Laravel application.
+## 📡 API Endpoint
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains thousands of video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+### `GET /api/v1/convert`
 
-## Laravel Sponsors
+#### Parameters
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the [Laravel Partners program](https://partners.laravel.com).
+| Name | Type | Required | Description |
+|------|------|-----------|-------------|
+| `from` | string | ✅ | Base currency (ISO 4217, e.g. `USD`) |
+| `to` | string | ✅ | Target currency (ISO 4217, e.g. `EUR`) |
+| `amount` | string / number | ✅ | Amount to convert (high precision) |
 
-### Premium Partners
+#### Example Request
+```
+GET /api/v1/convert?from=USD&to=EUR&amount=100
+```
 
-- **[Vehikl](https://vehikl.com)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel)**
-- **[DevSquad](https://devsquad.com/hire-laravel-developers)**
-- **[Redberry](https://redberry.international/laravel-development)**
-- **[Active Logic](https://activelogic.com)**
+#### Example Response
+```json
+{
+  "data": {
+    "from": "USD",
+    "to": "EUR",
+    "amount": "100.00",
+    "result": "93.15",
+    "rate": "0.9315",
+    "last_updated": "2025-10-30T14:12:00Z"
+  },
+  "meta": {
+    "source": "local_db",
+    "execution_time_ms": 12.45
+  }
+}
+```
 
-## Contributing
+---
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+## 🩺 Health Check Endpoint
 
-## Code of Conduct
+### `GET /health`
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Checks availability of:
+- Database
+- Cache (Redis)
+- External providers
 
-## Security Vulnerabilities
+#### Example Response
+```json
+{
+  "status": "ok",
+  "components": {
+    "database": "ok",
+    "cache": "ok",
+    "external_providers": {
+      "frankfurter": "ok",
+      "freecurrencyapi": "ok",
+      "currencyfreaks": "ok"
+    }
+  }
+}
+```
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+---
 
-## License
+## 🧩 Architecture Overview
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+```
+App/
+├── Domain/
+│   ├── Entities/
+│   │   └── ExchangeRate.php
+│   ├── ValueObjects/
+│   │   ├── Currency.php
+│   │   └── Money.php
+│
+├── Application/
+│   ├── Queries/
+│   │   └── ConvertCurrencyQuery.php
+│   └── Handlers/
+│       └── ConvertCurrencyQueryHandler.php
+│
+├── Infrastructure/
+│   └── Repositories/
+│       └── CurrencyRateRepository.php
+│
+├── Http/
+│   └── Controllers/
+│       ├── ConvertController.php
+│       └── HealthController.php
+│
+└── Jobs/
+    └── SyncCurrencyRatesJob.php
+```
+
+---
+
+## ⚙️ Background Jobs and Scheduler
+
+The system keeps currency rates up to date automatically using Laravel Queues and the Scheduler.
+
+### Start the queue worker
+
+Run a worker to process queued jobs:
+```bash
+php artisan queue:work
+```
+
+### Start the scheduler
+
+The scheduler runs the `SyncCurrencyRatesJob` every hour (defined in `routes/console.php`).
+
+Run it locally with:
+```bash
+php artisan schedule:work
+```
+
+---
+
+## 🧰 Installation & Setup
+
+```bash
+git clone https://github.com/<your-username>/currency-conversion-api.git
+cd currency-conversion-api
+composer install
+cp .env.example .env
+php artisan key:generate
+```
+
+Set environment variables:
+```
+FREECURRENCYAPI_KEY=your_api_key
+CURRENCYFREAKS_KEY=your_api_key
+CACHE_DRIVER=redis
+QUEUE_CONNECTION=redis
+```
+
+Run database migrations:
+```bash
+php artisan migrate
+```
+
+Serve the application:
+```bash
+php artisan serve
+```
+
