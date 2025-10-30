@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Cache;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Log;
+use App\Rules\SupportedCurrencyRule;
 
 class ConvertController extends Controller
 {
@@ -15,10 +16,12 @@ class ConvertController extends Controller
     {
         $start = microtime(true);
 
+        $request->headers->set('Accept', 'application/json');
+
         $validated = $request->validate([
-            'from' => 'required|string|size:3',
-            'to' => 'required|string|size:3|different:from',
-            'amount' => 'required|numeric|min:0',
+            'from' => ['required', 'string', 'size:3', new SupportedCurrencyRule()],
+            'to' => ['required', 'string', 'size:3', 'different:from', new SupportedCurrencyRule()],
+            'amount' => ['required', 'numeric', 'min:0.01'],
         ]);
 
         $from = strtoupper($validated['from']);
@@ -45,13 +48,13 @@ class ConvertController extends Controller
                 $providers = [
                     [
                         'name' => 'external_api',
-                        'url' => "https://api.frankfurter.app/latest",
+                        'url' => "https://api.frankfurter.app/latesta",
                         'params' => ['from' => $from, 'to' => $to],
                         'extract' => fn($json, $to) => $json['rates'][$to] ?? null,
                     ],
                     [
                         'name' => 'external_fallback_1',
-                        'url' => "https://api.freecurrencyapi.com/v1/latest",
+                        'url' => "https://api.freecurrencyapi.com/v1/latesta",
                         'params' => [
                             'base_currency' => $from,
                             'currencies' => $to,
